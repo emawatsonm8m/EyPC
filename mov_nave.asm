@@ -115,12 +115,15 @@ blank			db 		"     "
 player_lives 	db 		3
 player_score 	dw 		0
 player_hiscore 	dw 		0
+player_dead		db      0
 
 player_col		db 		ini_columna 	;posicion en columna del jugador
 player_ren		db 		ini_renglon 	;posicion en renglon del jugador
 
 enemy_col		db 		ini_columna 	;posicion en columna del enemigo
 enemy_ren		db 		3 				;posicion en renglon del enemigo
+temp_enemy_ren  db      ?				;variable para guardar el renglon inicial del enemigo
+enemy_sen		db      0  				;sentido actual del enemigo
 
 col_aux 		db 		0  		;variable auxiliar para operaciones con posicion - columna
 ren_aux 		db 		0 		;variable auxiliar para operaciones con posicion - renglon
@@ -131,11 +134,13 @@ entrada_tecla   db      ?		;Tecla ingresada por el usuario
 
 ;; Variables de ayuda para lectura de tiempo del sistema
 tick_ms			dw 		55 		;55 ms por cada tick del sistema, esta variable se usa para operación de MUL convertir ticks a segundos
-mil				dw		1000 	;1000 auxiliar para operación DIV entre 1000
+mil		        dw		1000 	;1000 auxiliar para operación DIV entre 1000
 diez 			dw 		10 		;10 auxiliar para operaciones
 sesenta			db 		60 		;60 auxiliar para operaciones
 status 			db 		0 		;0 stop, 1 play, 2 pause
-ticks 			dw		0 		;Variable para almacenar el número de ticks del sistema y usarlo como referencia
+t_mov_enem 	        dw		0 		;Variable para almacenar el número de ticks del sistema y usarlo como referencia
+t_atacar_enem           dw              0 		;Tiempo que tarda en hacer un movimiento para bajo la nave enemiga
+t_jug_muerto            dw              0    	;Tiempo que transcurre una vez que el jugador muere
 
 ;Variables que sirven de parámetros de entrada para el procedimiento IMPRIME_BOTON
 boton_caracter 	db 		0
@@ -361,10 +366,10 @@ conversion_mouse:
 	jmp comenzar_juego
 
 presionar_play:
-	lee_mouse			; Leer el nuevo estado
-	test bx,0001h		; Revisar si el botón izquierdo sigue presionado
-	jnz presionar_play ; Si NO es cero (todavía presionado), seguir esperando
-	jmp mouse_no_clic
+	lee_mouse               ; Leer el nuevo estado del mouse
+    test bx,0001h           
+    jnz presionar_play      
+    jmp mouse_no_clic
 
 boton_x:				;Si el botón X fue presionado antes de comenzar a jugar, salir del juego
 	cmp cx,76
@@ -394,30 +399,32 @@ teclado:
 ;====================================================
 
 comenzar_juego:
-    lee_mouse
+    lee_mouse           ; leer estado y posición del mouse
     
-    ;cambiar resolucion
-    shr dx,3       
-    shr cx,3 	
+    shr dx, 3           ; ajustar columna a bloques
+    shr cx, 3           ; ajustar renglón a bloques
     
-
-    test bx,0001h      
-    jz continuar		; Si no fue presionado X seguir jugando
-
-    cmp dx,0
-    jne continuar
+    test bx, 0001h      ; botón izquierdo presionado
+    jz continuar        ; si no, seguir juego
     
-    cmp cx,76
-    jl continuar
-    cmp cx,78
-    jg continuar
-    jmp salir
+    cmp dx, 0           ; columna del botón X
+    jne continuar       ; fuera de rango, seguir juego
+    
+    cmp cx, 76          ; límite superior del botón X
+    jl continuar        ; fuera de rango, seguir juego
+    
+    cmp cx, 78          ; límite inferior del botón X
+    jg continuar        ; fuera de rango, seguir juego
+    
+    jmp salir           ; clic sobre el botón X → salir
 
 continuar:
-    call LEER_TECLADO
+    call LEER_TECLADO    
     call MOV_NAVE
+    call MOV_ENEMIGO
+    call CHOQUE
+    call REVIVIR_JUGADOR
     jmp comenzar_juego
-
 
 salir:				;inicia etiqueta salir
 	clear 			;limpia pantalla
@@ -803,6 +810,64 @@ salir:				;inicia etiqueta salir
 		ret
 	endp
 
+	DELETE_ENEMY proc
+
+    ; ===== Columna central (3 bloques) =====
+    posiciona_cursor [ren_aux], [col_aux]
+    imprime_caracter_color ' ', cNegro, bgNegro
+
+    inc [ren_aux]
+    posiciona_cursor [ren_aux], [col_aux]
+    imprime_caracter_color ' ', cNegro, bgNegro
+
+    inc [ren_aux]
+    posiciona_cursor [ren_aux], [col_aux]
+    imprime_caracter_color ' ', cNegro, bgNegro
+
+    sub [ren_aux], 2
+
+
+    ; ===== Columna izquierda (2 bloques) =====
+    dec [col_aux]
+    posiciona_cursor [ren_aux], [col_aux]
+    imprime_caracter_color ' ', cNegro, bgNegro
+
+    inc [ren_aux]
+    posiciona_cursor [ren_aux], [col_aux]
+    imprime_caracter_color ' ', cNegro, bgNegro
+
+    dec [ren_aux]
+
+
+    ; ===== Extremo más izquierdo (1 bloque) =====
+    dec [col_aux]
+    posiciona_cursor [ren_aux], [col_aux]
+    imprime_caracter_color ' ', cNegro, bgNegro
+
+
+    ; ===== Columna derecha (2 bloques) =====
+    add [col_aux], 3
+    posiciona_cursor [ren_aux], [col_aux]
+    imprime_caracter_color ' ', cNegro, bgNegro
+
+    inc [ren_aux]
+    posiciona_cursor [ren_aux], [col_aux]
+    imprime_caracter_color ' ', cNegro, bgNegro
+
+    dec [ren_aux]
+
+
+    ; ===== Extremo más derecho (1 bloque) =====
+    inc [col_aux]
+    posiciona_cursor [ren_aux], [col_aux]
+    imprime_caracter_color ' ', cNegro, bgNegro
+
+    ret
+DELETE_ENEMY endp
+
+    
+
+
 	;procedimiento IMPRIME_BOTON
 	;Dibuja un boton que abarca 3 renglones y 5 columnas
 	;con un caracter centrado dentro del boton
@@ -862,6 +927,16 @@ salir:				;inicia etiqueta salir
 		ret
 	endp
 
+	ELIMINA_ENEMIGO proc
+		mov al,[enemy_col]
+		mov ah,[enemy_ren]
+		mov [col_aux],al
+		mov [ren_aux],ah
+		call DELETE_ENEMY
+		ret
+	endp
+
+
  LEER_TECLADO proc
     mov ah, 01h
     int 16h
@@ -879,42 +954,321 @@ no_tecla:
 endp
 
 MOV_NAVE proc 
+
+	; Si el jugador está "muerto", no permitir que se mueva
+	cmp [player_dead], 1
+	je limite_alcanzado
+
+    ; Revisar qué tecla se presionó
     mov al, [entrada_tecla]
+
+    ; Si fue flecha izquierda → mover a la izquierda
     cmp al, tecla_izq
     je mov_izq
 
+    ; Si fue flecha derecha → mover a la derecha
     cmp al, tecla_der
     je mov_der
 
+    ; Si no fue ninguna de esas teclas, salir
     ret 
+
+
+
+; Movimiento del jugador hacia la izquierda
 
 mov_izq:
     mov al, [player_col]
-    dec al
-    cmp al, lim_izquierdo + 2
-    jle limite_alcanzado
-    call BORRA_JUGADOR
-    dec [player_col]
-    call IMPRIME_JUGADOR
+    dec al                      ; probar si puede moverse 1 columna a la izquierda
+    cmp al, lim_izquierdo + 2   ; revisar si ya llegó al borde
+    jle limite_alcanzado        ; si ya no puede moverse, salir
+
+    call BORRA_JUGADOR          ; borrar donde estaba
+    dec [player_col]            ; mover realmente al jugador
+    call IMPRIME_JUGADOR        ; dibujarlo en la nueva posición
     ret
+
+
+; Movimiento del jugador hacia la derecha
 
 mov_der:
     mov al, [player_col]
-    inc al
-    cmp al, lim_derecho - 2 
-    jge limite_alcanzado
-    call BORRA_JUGADOR
-    inc [player_col]
-    call IMPRIME_JUGADOR
+    inc al                      ; probar si puede moverse 1 columna a la derecha
+    cmp al, lim_derecho - 2     ; revisar si llegó al borde derecho
+    jge limite_alcanzado        ; si ya no puede, salir
+
+    call BORRA_JUGADOR          ; borrar donde estaba
+    inc [player_col]            ; mover realmente al jugador
+    call IMPRIME_JUGADOR        ; dibujarlo en la nueva posición
     ret
+
+
+
+; No se mueve (llegó al límite o está muerto)
 
 limite_alcanzado:
     ret
 
+
 MOV_NAVE endp
+
+
+MOV_ENEMIGO proc           
+
+	
+    mov ah,00h
+    int 1Ah            ; Lee el valor del contador de ticks 
+
+    
+    mov ax,dx
+    sub ax,[t_mov_enem]
+    cmp ax,2           ; Verificar si han pasado 2 ticks
+    jb bajar        ; si no han pasado los 2 ticks, la nave enemiga no debe moverse
+
+    ; si ya pasaron los ticks necesarios, actualizar el tiempo de movimiento horizontal
+    mov [t_mov_enem], dx
+
+    mov al, [enemy_sen]   
+    cmp al, 0  		   ; Para identificar la dirección de la nave enemiga, como enemy_sen = 0, la nave empezara a moverse a la izquierda
+    je enem_izq
+    jmp enem_der
+
+;Movimiento horizontal
+enem_izq:
+    mov al, [enemy_col]
+    dec al                      ; Probar recorrer la nave un movimiento a la izquierda
+    cmp al, lim_izquierdo + 2
+    jle cambio_der              ; si ya llegó al limite izquierdo, cambiar el sentido 
+
+   ; Borrar la nave en la posicion actual e imprimirla en la siguiente
+    call ELIMINA_ENEMIGO
+    dec [enemy_col]
+    call IMPRIME_ENEMIGO
+    ret
+
+enem_der:
+    mov al, [enemy_col]
+    inc al                      ; Probar recorrer la nave un movimiento a la derecha
+    cmp al, lim_derecho-2
+    jge cambio_izq              ; si ya llegó al limite izquierdo, cambiar el sentido 
+
+    ; Borrar la nave en la posicion actual e imprimirla en la siguiente
+    call ELIMINA_ENEMIGO
+    inc [enemy_col]
+    call IMPRIME_ENEMIGO
+    ret
+
+cambio_der:
+    mov byte ptr [enemy_sen], 1 ; Cambio de sentido de la nava a la derecha
+    ret
+
+cambio_izq:
+    mov byte ptr [enemy_sen], 0 ; Cambio de sentido de la nava a la izquierda
+    ret
+
+
+;Movimiento vertical
+
+bajar:
+    mov ax, dx
+    sub ax, [t_atacar_enem]
+    cmp ax, 36
+    jb no_bajar
+
+    mov [t_atacar_enem], dx ; si han pasado los 3 segundos actualizar el tiempo para bajar
+
+
+    ; Borrar posicion actual
+    
+    mov al, [enemy_ren]
+    mov [ren_aux], al
+
+    mov al, [enemy_col]
+    mov [col_aux], al
+
+    call DELETE_ENEMY
+
+
+    
+    ; Bajar enemigo
+
+    inc [enemy_ren]
+
+
+    
+    ; Imprimir nueva posición 
+    
+    mov al, [enemy_ren]
+    mov [ren_aux], al
+
+    mov al, [enemy_col]
+    mov [col_aux], al
+
+    call PRINT_ENEMY
+
+
+
+
+    ; Checar si no ha llegado al limite inferior
+
+    mov al, [enemy_ren]
+    cmp al, lim_inferior - 2
+    jl no_bajar  ; si no llegó al fondo sigue normal
+
+
+nuevo_enemigo:
+
+	mov al, [enemy_ren]
+    mov [ren_aux], al
+
+    mov al, [enemy_col]
+    mov [col_aux], al
+
+
+    call DELETE_ENEMY
+    mov [enemy_ren], 3
+
+
+    ; Reiniciar coordenadas para imprimir una nueva nave
+    mov al, [enemy_ren]
+    mov [ren_aux], al
+
+    mov al, [enemy_col]
+    mov [col_aux], al
+
+    call PRINT_ENEMY
+
+
+no_bajar:
+    ret
+
+
+
+MOV_ENEMIGO endp
+
+
+
+REVIVIR_JUGADOR proc
+
+	; Solo funciona si el jugador está muerto
+	cmp [player_dead], 1
+	jne no_revivir
+
+    ; Lee el valor del contador de ticks 
+	mov ah,00h
+    int 1Ah
+
+    ; Ver cuánto tiempo ha pasado desde que murió
+    mov ax, dx
+    sub ax, [t_jug_muerto]
+
+    ; Si ya pasaron 2 segundos, revivir
+    cmp ax, 36
+    jae revivir
+
+    ; Si aún no pasan 2 segundos, salir
+    jmp no_revivir
+
+
+revivir:
+	; Marcar que ya está vivo
+ 	mov [player_dead], 0
+
+ 	; Cargar la posición del jugador
+ 	mov al, [player_col]
+    mov [col_aux], al
+
+    mov al, [player_ren]
+    mov [ren_aux], al
+
+	; Volverlo a dibujar en pantalla
+    call IMPRIME_JUGADOR
+
+no_revivir:
+    ret
+
+REVIVIR_JUGADOR endp
+
+
+
+CHOQUE proc
+
+    ; Si el jugador ya está muerto no hubo choque
+    cmp [player_dead], 1
+    je no_choque
+
+    ; Guardar la posicion del jugador
+    mov bl, [player_col]
+    mov bh, [player_ren]
+
+    ; Guardar la posicion del enemigo
+    mov dl, [enemy_col]
+    mov dh, [enemy_ren]
+
+
+; ================================
+; Checar si chocan horizontalmente
+; ================================
+
+    ; Revisar si el jugador quedó del lado derecho de la nave enemiga
+    mov al, bl
+    sub al, 2
+    mov ah, dl
+    add ah, 2
+    cmp al, ah
+    ja no_choque
+
+    ; Revisar si el jugador quedó del lado izquierdo de la nave enemiga
+    mov al, bl
+    add al, 2
+    mov ah, dl
+    sub ah, 2
+    cmp al, ah
+    jb no_choque
+
+
+; ================================
+; Checar si chocan verticalmente
+; ================================
+
+    ; Revisar si el jugador quedó abajo del enemigo
+    mov al, bh
+    sub al, 2
+    mov ah, dh
+    add ah, 2
+    cmp al, ah
+    ja no_choque
+
+    ; Revisar si el jugador quedó arriba del enemigo
+    mov al, bh
+    add al, 2
+    mov ah, dh
+    sub ah, 2
+    cmp al, ah
+    jb no_choque
+
+
+
+    
+    ; Sí coinciden hubo choque
+    
+    mov [player_dead], 1
+    call BORRA_JUGADOR
+
+    mov ah,00h
+    int 1Ah
+    mov [t_jug_muerto], dx
+
+
+no_choque:
+    ret
+
+CHOQUE endp
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;FIN PROCEDIMIENTOS;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 end inicio			;fin de etiqueta inicio, fin de programa
+
