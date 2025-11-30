@@ -1761,6 +1761,24 @@ Ciclo_ce:
     ; también borra jugador y marca tiempo de muerte
     mov [player_dead],1
     call BORRA_JUGADOR
+
+    ; Reducir una vida
+    dec byte ptr [player_lives]
+
+    ; Refrescar display de vidas: borra y reimprime
+    posiciona_cursor lives_ren, lives_col+20
+    imprime_cadena_color blank,5,cBlanco,bgNegro
+    call IMPRIME_LIVES
+
+    ; Si ya no hay vidas = GAME OVER
+    mov al, [player_lives]
+    cmp al, 0
+    jne jugador_muerto_por_misil
+
+    call GAME_OVER
+    jmp sig_ce_final ; Sale del ciclo después del GAME OVER
+
+jugador_muerto_por_misil:
     mov ah,00h
     int 1Ah
     mov [t_jug_muerto],dx
@@ -1768,9 +1786,14 @@ Ciclo_ce:
 sig_ce:
     inc si
     jmp Ciclo_ce
+    
+sig_ce_final:
+    inc si
+    jmp Ciclo_ce
+
 fin_ce:
     ret
-endp
+COLISION_ME_JUG endp
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;FIN PROCEDIMIENTOS;;;;;;
